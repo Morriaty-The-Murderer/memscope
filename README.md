@@ -1,89 +1,93 @@
 # memscope
 
-> Lightweight, vendor-neutral agent memory evaluation harness.
+> **Agent Memory 领域的 MLPerf —— 本地运行、无需 GPU、厂商中立的 Agent Memory 评测工具。**
 > Compare Mem0, Zep, Letta, or your own backend on LongMemEval — fairly, reproducibly, on your laptop.
 
-## Why does this exist?
+[English](#english) | 中文
 
-Every agent memory vendor publishes benchmark scores showing they're the best. The problem: **the same system gets wildly different scores depending on who's measuring**.
+---
 
-Example: Mem0 on LongMemEval with GPT-4o:
+## 为什么需要它
 
-| Source | Score |
-|--------|-------|
-| Mem0 official self-report (April 2026) | **94.4%** |
-| Independent third-party test (June 2026) | **49.0%** |
+每个 Agent Memory 厂商都发布 benchmark 证明自己最强。问题在于：**同一个系统，谁在量，分数就差多少。**
 
-That's a **45-percentage-point gap** on the same benchmark, same model. This isn't a rounding error — it's a systemic reproducibility crisis. The gap comes from differences in:
+Mem0 在 LongMemEval 上用 GPT-4o 的分数：
 
-1. **Judge prompt** — the LLM-as-judge prompt that scores answer correctness. Small wording changes swing scores by double digits.
-2. **Dataset split** — which subset of LongMemEval's 500 questions are used.
-3. **Retrieval depth** — how many memories are retrieved before answering (top-5 vs top-25).
-4. **Reader model** — which LLM consumes the retrieved memories to produce an answer.
-5. **Insertion semantics** — how conversation sessions are chunked and fed to the memory backend.
-6. **Re-ranker** — whether a re-ranking step is applied after retrieval.
+| 来源 | 分数 |
+|------|------|
+| Mem0 官方自报（2026 年 4 月） | **94.4%** |
+| 独立第三方测试（2026 年 6 月） | **49.0%** |
 
-No existing harness controls for all of these variables. **memscope does.**
+同一个 benchmark、同一个模型，分数差 **45 个百分点**。这不是误差，是系统性的可复现性危机。差异来自 6 个变量：
 
-## What it does
+1. **Judge prompt** — LLM-as-judge 的评判 prompt，措辞微调就能让分数波动两位数
+2. **Dataset split** — 用 LongMemEval 500 题的哪个子集
+3. **Retrieval depth** — 检索 top-5 还是 top-25
+4. **Reader model** — 用哪个 LLM 消费检索结果生成答案
+5. **Insertion semantics** — 对话如何分块喂给记忆后端
+6. **Re-ranker** — 检索后是否做重排序
 
-```
+现有评测工具没有一个同时控制这 6 个变量。**memscope 控制全部。**
+
+## 它做什么
+
+```bash
 memscope run --backends vector-baseline,mem0 --dataset longmemeval-s --reader openai
 ```
 
-For each question in LongMemEval-S (500 questions, each with ~53 conversation sessions):
+对 LongMemEval-S 的每一道题（500 题，每题约 53 轮对话）：
 
-1. **Reset** the backend (clean slate per question)
-2. **Ingest** all ~53 haystack sessions into the memory backend
-3. **Search** using the question as query
-4. **Score Recall@K** — did the top-K retrieved memories come from the ground-truth answer sessions?
-5. **(Optional) Answer** — a reader LLM answers using top-10 memories, judged for correctness
+1. **Reset** — 清空后端，每题干净开始
+2. **Ingest** — 将约 53 轮 haystack 对话喂入记忆后端
+3. **Search** — 用问题做查询检索
+4. **Score Recall@K** — top-K 检索结果是否命中 ground-truth 答案所在会话
+5. **(可选) Answer** — reader LLM 用 top-10 记忆回答，评判正确性
 
-Output: a Markdown + JSON comparison report with per-backend and per-question-type breakdowns.
+输出：Markdown + JSON 对比报告，按后端和题目类型拆分。
 
-## Quick Start
+## 快速开始
 
 ```bash
 # Clone
-git clone https://github.com/yourname/memscope.git
+git clone https://github.com/Morriaty-The-Murderer/memscope.git
 cd memscope
 
-# Create venv
+# 创建虚拟环境
 python3 -m venv .venv
 source .venv/bin/activate
 
-# Install
+# 安装
 pip install -e .
 
-# Run (retrieval-only, no API key needed, ~10 min on CPU)
+# 运行（仅检索，无需 API key，CPU 约 10 分钟）
 memscope run --backends vector-baseline --dataset longmemeval-s --skip-answer
 
-# Run with end-to-end accuracy (requires OPENAI_API_KEY)
+# 运行端到端准确率（需要 OPENAI_API_KEY）
 memscope run --backends vector-baseline --dataset longmemeval-s --reader openai
 
-# Quick test (10 questions only)
+# 快速测试（仅 10 题）
 memscope run --backends vector-baseline --num-questions 10 --skip-answer
 ```
 
-### Adding Mem0 as a backend
+### 添加 Mem0 后端
 
 ```bash
 pip install -e ".[mem0]"
 
-# Configure Mem0 (uses Qdrant by default, or set up local vector store)
-export OPENAI_API_KEY=your_key  # Mem0 uses LLM for extraction
+# 配置 Mem0（默认用 Qdrant，或用本地向量存储）
+export OPENAI_API_KEY=your_key  # Mem0 用 LLM 做 extraction
 
 memscope run --backends vector-baseline,mem0 --dataset longmemeval-s --skip-answer
 ```
 
-## Backends
+## 后端
 
-| Backend | Package | Description |
-|---------|---------|-------------|
-| `vector-baseline` | built-in | Pure vector similarity. Embeds each user turn, retrieves by cosine. No LLM extraction, no graph. Sanity-check floor. |
-| `mem0` | `pip install mem0ai` | Wraps Mem0's `add()`/`search()` API. Uses Mem0's internal LLM extraction + vector store. |
+| 后端 | 安装 | 说明 |
+|------|------|------|
+| `vector-baseline` | 内置 | 纯向量相似度。embed 每轮对话，cosine 检索。无 LLM extraction，无 graph。地板线。 |
+| `mem0` | `pip install mem0ai` | 包装 Mem0 的 `add()`/`search()` API。用 Mem0 内置 LLM extraction + 向量存储。 |
 
-### Adding your own backend
+### 添加你自己的后端
 
 ```python
 from memscope.backends.base import MemoryBackend
@@ -100,95 +104,99 @@ class MyBackend(MemoryBackend):
         ...
 ```
 
-Then pass it to `evaluate_backend()` directly, or register it in `cli.py`.
+然后传给 `evaluate_backend()`，或在 `cli.py` 中注册。
 
-## Methodology: Why your scores differ from vendor reports
+## 方法论：为什么你的分数和厂商报告不同
 
-This is the most important section. If you run memscope and get a score that differs from a vendor's published number, here's why:
+这是最重要的 section。如果你跑 memscope 得到的分数和厂商发布的不同，原因如下：
 
-### 1. We don't use an LLM judge for answer correctness
+### 1. 我们不用 LLM judge 评判答案正确性
 
-Most vendor benchmarks use GPT-4 as an LLM judge to score answer correctness. The judge prompt is typically not published. We've seen the same Q&A pair scored as "correct" by one judge prompt and "incorrect" by another, simply by changing "Is the answer correct?" to "Does the answer contain the key information?".
+多数厂商 benchmark 用 GPT-4 做 LLM judge 评分，评判 prompt 通常不公开。同一个 Q&A 对，把 "Is the answer correct?" 改成 "Does the answer contain the key information?"，判定结果就能从"对"变"错"。
 
-**memscope V1** uses a deterministic string-matching judge: the ground-truth answer must appear as a substring, or share ≥60% word overlap with the reader's answer. This is stricter than most LLM judges — we'll report lower accuracy scores, but they're **reproducible**.
+**memscope V1** 用确定性字符串匹配：ground-truth 答案必须作为子串出现，或与 reader 答案有 ≥60% 词重叠。比大多数 LLM judge 更严格——我们会报更低的准确率，但**可复现**。
 
-**Trade-off**: Our judge will mark some semantically-correct answers as wrong (e.g., "BA" vs "Business Administration"). This is a known limitation. V2 will offer an optional LLM judge with a **published, frozen prompt** so at least the bias is documented.
+**代价**：会误判一些语义正确但词面不同的答案（如 "BA" vs "Business Administration"）。已知限制。V2 会提供可选 LLM judge，但 prompt **公开且冻结**，让偏差至少可见。
 
-### 2. Recall@K is retrieval-only, not answer accuracy
+### 2. Recall@K 是检索指标，不是答案准确率
 
-Recall@K measures whether the *right memory* was retrieved — not whether the *right answer* was produced. A backend can have 100% Recall@5 but 0% answer accuracy if the reader LLM fails to extract the answer from the retrieved context.
+Recall@K 测的是有没有检索到正确的记忆——不是有没有答对问题。一个后端可以 Recall@5 = 100% 但答案准确率 0%，如果 reader LLM 没能从检索结果中提取答案。
 
-Vendor benchmarks often conflate these. We report them separately.
+厂商 benchmark 经常把两者混为一谈。我们分开报。
 
-### 3. We ingest full sessions, not pre-extracted facts
+### 3. 我们喂原始会话，不是预提取的 facts
 
-Some benchmarks pre-process conversations into "facts" before feeding them to memory backends. This gives extraction-based backends (like Mem0) an unfair advantage because the extraction step is done externally.
+有些 benchmark 预处理对话成 "facts" 再喂给记忆后端。这对 extraction-based 后端（如 Mem0）不公平——extraction 步骤被外部完成了。
 
-**memscope** feeds raw conversation sessions `[{role, content}, ...]` to each backend's `add()` method. Each backend does its own extraction (or not). This is the fair comparison.
+**memscope** 喂原始对话 `[{role, content}, ...]` 给每个后端的 `add()` 方法。每个后端自己做 extraction（或不做）。这才是公平比较。
 
-### 4. We reset between questions
+### 4. 每题之间 reset
 
-Each question gets a fresh backend. No cross-question contamination. Some benchmarks share state across questions, which inflates scores for backends that benefit from accumulated context.
+每道题用干净后端。无跨题污染。有些 benchmark 跨题共享状态，会 inflate 依赖累积上下文的后端分数。
 
-### 5. Embedding model is fixed and local
+### 5. Embedding 模型固定且本地
 
-We use `all-MiniLM-L6-v2` (384-dim, CPU, no API key) for the vector-baseline backend. This is deliberately small — it's the floor, not the ceiling. If your backend uses a better embedding model, that's part of your backend's value proposition, not a benchmark artifact.
+vector-baseline 用 `all-MiniLM-L6-v2`（384 维，CPU，无需 API key）。故意选小的——这是地板线，不是天花板。如果你的后端用更好的 embedding，那是你后端的价值，不是 benchmark 的 artifact。
 
-### 6. We report per-question-type breakdowns
+### 6. 按题型拆分报告
 
-LongMemEval-S has 6 question types (single-session-user, multi-session, temporal-reasoning, knowledge-update, etc.). Aggregate scores hide where backends actually shine or fail. A backend might score 80% overall but 30% on temporal-reasoning — that's the insight that matters.
+LongMemEval-S 有 6 种题型（single-session-user、multi-session、temporal-reasoning、knowledge-update 等）。总分会掩盖后端在哪类题上真正发光或翻车。一个后端总分 80% 但 temporal-reasoning 只有 30%——这才是有价值的洞察。
 
-## V2 Roadmap
-
-### Task-success evaluation (user-requested)
-
-**The gap**: Current memory benchmarks measure *can you retrieve the right memory?* — not *does having memory make the agent better at its task?* A backend with 95% Recall@K might not improve agent task success if the retrieved memories are redundant, poorly formatted, or cause the reader to hallucinate.
-
-**V2 plan**: Add `evaluate_task_success()` to the evaluation pipeline:
-1. Run an agent on a task suite **without** memory (baseline)
-2. Run the same agent **with** each memory backend
-3. Measure delta in task success rate
-
-This requires a task harness (e.g., WebArena, Terminal-Bench) and is substantially more complex. The `MemoryBackend` interface already reserves space for this via the `evaluate_task_success` method signature in the V2 roadmap.
-
-### Additional backends
-- Zep / Graphiti adapter
-- Letta adapter
-- RAG baseline (BM25-only, no embeddings)
-
-### Additional datasets
-- LongMemEval-V2 (100M token web agent trajectories)
-- LoCoMo (1,540 questions, multi-hop + temporal)
-- BEAM (1M/10M token scale)
-
-### Optional LLM judge with frozen prompt
-A documented, version-controlled judge prompt that users can optionally enable. The prompt will be published in the repo and frozen per release, so bias is at least visible.
-
-## Architecture
+## 架构
 
 ```
 memscope/
 ├── backends/
 │   ├── base.py              # MemoryBackend ABC (add/search/reset)
-│   ├── vector_baseline.py   # Pure vector similarity baseline
-│   └── mem0_adapter.py      # Mem0 adapter
+│   ├── vector_baseline.py   # 纯向量相似度 baseline
+│   └── mem0_adapter.py      # Mem0 适配器
 ├── datasets/
-│   └── longmemeval.py       # LongMemEval-S loader (HF auto-download)
+│   └── longmemeval.py       # LongMemEval-S loader (HF 自动下载)
 ├── evaluation/
-│   └── metrics.py           # Recall@K + answer accuracy pipeline
+│   └── metrics.py           # Recall@K + 答案准确率 pipeline
 ├── readers/
 │   ├── base.py              # Reader ABC
-│   └── openai_reader.py     # OpenAI-compatible reader
-├── report.py                # Markdown + JSON report generation
-└── cli.py                   # CLI entry point
+│   └── openai_reader.py     # OpenAI 兼容 reader
+├── report.py                # Markdown + JSON 报告生成
+└── cli.py                   # CLI 入口
 ```
 
-## Requirements
+```
+┌─────────────┐     ┌──────────────────┐     ┌───────────────┐     ┌──────────────┐
+│  Dataset     │────▶│  Memory Backend  │────▶│  Retriever    │────▶│  Recall@K    │
+│ (LongMemEval)│     │ (pluggable:      │     │ (local embed  │     │ (per-type    │
+│  500 Q       │     │  mem0 / custom)  │     │  + ranking)   │     │  breakdown)  │
+└─────────────┘     └──────────────────┘     └───────────────┘     └──────────────┘
+                                                     │
+                                                     ▼                    V2 扩展层
+                                            ┌──────────────────┐     ┌──────────────┐
+                                            │  Agent Runner     │────▶│ Task Success │
+                                            │ (with/without     │     │ Rate Δ       │
+                                            │  memory)          │     │ (extrinsic)  │
+                                            └──────────────────┘     └──────────────┘
+```
+
+V1 跑上半部分：数据集 → 记忆后端 → 检索 → Recall@K（按题型拆分）。V2 接 Agent Runner，对比有/无记忆的任务成功率差异。两层共享 MemoryBackend 接口，V2 是 V1 的自然扩展。
+
+## 路线图
+
+- [x] **v0.1** — V1 检索评测：LongMemEval-S + 确定性评判 + Recall@K + 可插拔后端
+- [ ] **v0.2** — 补充 LoCoMo / BEAM 数据集 + 更多 baseline + Zep/Letta 适配器
+- [ ] **v0.3** — V2 任务成功率评测：Agent Runner 接口 + 有/无记忆对比
+- [ ] **v0.4** — 可选 LLM judge（公开冻结 prompt）+ 社区贡献的后端适配
+
+> V2 是核心差异化。当前领域的问题不是"能不能测检索"，而是"检索好不等于任务好"——MemoryArena (2026) 发现 LoCoMo 上接近满分的 Agent 在多轮依赖任务上成功率骤降。memscope V2 直接回答这个问题。
+
+## 环境要求
 
 - Python ≥ 3.10
-- No GPU required (CPU inference with all-MiniLM-L6-v2)
-- ~500MB disk for dataset cache
-- Optional: `OPENAI_API_KEY` for end-to-end accuracy evaluation or Mem0 backend
+- 无需 GPU（CPU 推理 all-MiniLM-L6-v2）
+- 约 500MB 磁盘（数据集缓存）
+- 可选：`OPENAI_API_KEY`（端到端准确率评测或 Mem0 后端需要）
+
+## 贡献
+
+欢迎贡献数据集适配、记忆后端插件、benchmark 结果复现。见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## License
 
